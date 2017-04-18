@@ -72,6 +72,13 @@ typedef struct INSTR_
     ushort opcode   :  4;
 } INSTR;
 
+typedef struct SYMBOL_
+{
+    char name[255];
+    int value;
+} SYMBOL;
+static SYMBOL symbolTable[255];
+static int symbolTablePtr = 0;
 //-----------------------------------------------------------------------------
 /*!     \brief      R-Type machine code instruction bitfield
  *      \note       "pad" field included in order to fill with zeros during
@@ -448,6 +455,60 @@ uchar getLabelJump(char* label, int current_line)
     return -1;
 }
 
+/* Symbol Functions */
+void addSymbol(char *name, int value)
+{
+    if (symbolTablePtr < 255)
+    {
+        SYMBOL newSymbol;
+        newSymbol.value = value;
+        strcpy(newSymbol.name, name);
+        symbolTable[symbolTablePtr] = newSymbol;
+        symbolTablePtr++;
+    }
+}
+
+int inTable(char* name)
+{
+    //printf("inTable\n");
+    SYMBOL currentSymbol;
+    for(int i = 0; i < symbolTablePtr; i++)
+    {
+        currentSymbol = symbolTable[i];
+        //printf("Name: %s; value: %d\n", currentSymbol.name, currentSymbol.value);
+        if(strcmp(currentSymbol.name, name) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int getValue(char* name)
+{
+    SYMBOL currentSymbol;
+    for(int i = 0; i < symbolTablePtr; i++)
+    {
+        
+        currentSymbol = symbolTable[i];
+        //printf("Name: %s\n", currentSymbol.name);
+        if(strncmp(currentSymbol.name, name, 64) == 0)
+        {
+            return currentSymbol.value;
+        }
+    }
+    return -1;
+}
+
+void printTable(void)
+{
+    SYMBOL currentSymbol;
+    for(int i = 0; i < symbolTablePtr; i++)
+    {
+        currentSymbol = symbolTable[i];
+        printf("Name: %s; Value: %d\n", currentSymbol.name, currentSymbol.value);
+    }
+}
 /*------------------------------------------------------------------------------
  *   #$-Parsing Functions-$#
  *-----------------------------------------------------------------------------*/
@@ -699,6 +760,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
     int immedNum;
     int scanError = 0;
     
+    int scanResult = -1;
+    char tempName[255];
+    SYMBOL tempSymbol;
+
     char immedStr[255];
     strcpy(immedStr, "");
     
@@ -712,8 +777,22 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
     }
     
     //Parse first register
-    sscanf(token, "$%i,", &rFirst);
-    
+    scanResult = sscanf(token, "$%i,", &rFirst);
+    if(scanResult == 0)
+    {
+        // if we get here, then we didn't read in correctly
+        sscanf(token, "%[^,]", &tempName);
+        if( inTable(tempName))
+        {
+            rFirst = getValue(tempName);
+        }
+        else
+        {
+            printf("Symbol not in table\n");
+        }
+    }
+
+    //printf("First reg: %d\n", rFirst);
     // First we treat normal R-type
     // Format:
     // opcode $rd, $rs, $rt
@@ -731,8 +810,23 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         
         //Parse second register
-        sscanf(token, "$%i,", &rSecond);
-        
+        //sscanf(token, "$%i,", &rSecond);
+        scanResult = sscanf(token, "$%i,", &rSecond);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", &tempName);
+            if( inTable(tempName))
+            {
+                rSecond = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+       
         // Grab third register
         token = strtok(NULL, " ");
         
@@ -743,7 +837,23 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         //Parse third register: TODO - need to add func to check if this token
         // is a label referring to the data segment
-        sscanf(token, "$%i", &rThird);
+        //sscanf(token, "$%i", &rThird);
+        scanResult = sscanf(token, "$%i,", &rThird);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", &tempName);
+            if( inTable(tempName))
+            {
+                rThird = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+
         //TODO: check what rThird looks like by printing it
         // so that we know what we want the func mentioned above to return 
 
@@ -781,7 +891,22 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse second register
         sscanf(token, "$%i", &rSecond);
-        
+        scanResult = sscanf(token, "$%i,", &rSecond);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", &tempName);
+            if( inTable(tempName))
+            {
+                rSecond = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+
         R_INSTR *r_instr = (R_INSTR*)instr;
         
         //Populate instructions according to format
@@ -838,8 +963,18 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             return -1;
         }
         
-        immedNum = getImmed(token);
-        
+        sscanf(token, "%s", &tempName);
+        //printf("Here?\n");
+        if(inTable(tempName))
+        {
+           // printf("what\n");
+            immedNum = getValue(tempName);
+        }
+        else
+        {
+            //printf("Here?\n");
+            immedNum = getImmed(token);
+        }
         //Parse immediate
         //sscanf(token, "%x", &immedNum);
         
@@ -853,8 +988,24 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         
         //Parse second register
-        sscanf(token, "$%i", &rSecond);
-        
+        //sscanf(token, "$%i", &rSecond);
+        scanResult = sscanf(token, "$%i,", &rSecond);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", &tempName);
+            if( inTable(tempName))
+            {
+                rSecond = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+
+
         //Populate instructions according to format
         // opcode   $rt, offst($rs)
         IJ_INSTR *ij_instr = (IJ_INSTR*)instr;
@@ -888,8 +1039,23 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         
         //Parse second register
-        sscanf(token, "$%i,", &rSecond);
-        
+        //sscanf(token, "$%i,", &rSecond);
+        scanResult = sscanf(token, "$%i,", &rSecond);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", tempName);
+            if( inTable(tempName))
+            {
+                rSecond = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+    
         //Grab label
         token = strtok(NULL, " \n");
         
@@ -941,8 +1107,23 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         
         //Parse second register
-        sscanf(token, "$%i,", &rSecond);
-        
+       // sscanf(token, "$%i,", &rSecond);
+        scanResult = sscanf(token, "$%i,", &rSecond);
+        if(scanResult == 0)
+        {
+            // if we get here, then we didn't read in correctly
+            sscanf(token, "%[^,]", &tempName);
+            if( inTable(tempName))
+            {
+                rSecond = getValue(tempName);
+            }
+            else
+            {
+                printf("Symbol not in table\n");
+            }
+        }
+
+        //printf("Second reg: %d\n", rSecond);
         //Grab immediate
         token = strtok(NULL, " \n");
         
@@ -951,8 +1132,19 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         {
             return -1;
         }
+        //strcpy(tempName, "");
         
-        immedNum = getImmed(token);
+        sscanf(token, "%s", tempName);
+        //printf("Name: %s\n", tempName);
+        if(inTable(tempName))
+        {
+            immedNum = getValue(tempName);
+        }
+        else
+        {
+            immedNum = getImmed(token);
+            //printf("%d\n", immedNum);
+        }
         
         //Parse immediate
         //sscanf(token, "%x", &immedNum);
@@ -1067,18 +1259,6 @@ int parseOneLine(char* parse_buf, INSTR* instr_ptr, INSTR_NODE** ptr_to_current)
     return -1;
 }
 
-//-----------------------------------------------------------------------------
-/*!     \brief      Parses lines for first pass; builds symbol table from .data
- *                  section, and finds the beginning of the text section
- *      \param      parse_buf       pointer to stream of characters that need to 
- *                                  be parsed
- *                  symbol_table    probably just an array of symbol structs
- *                  symbol_ptr      points to the end of the symbol table in arr
- */
-int parseFirstPass(char* parse_buf, /* need to pass in symbol table also */)
-{
-    return -1;
-}
 /*------------------------------------------------------------------------------
  *                                  #$-Main-$#
  *-----------------------------------------------------------------------------*/
@@ -1130,6 +1310,15 @@ int main (int argc, char *argv[])
         return 0;
     }
 
+    FILE *dataFd = fopen(dataFile, "w");
+    if (dataFd == NULL)
+    {
+        addError(INV_INPUT);
+        handleErrors();
+        return 0;
+    }
+
+    fprintf(dataFd, "memory_initialization_radx=16;\nmemory_initialization_vector=");
     // Initialize current for instruction LL to NULL
     INSTR_NODE* current = NULL;
     // TODO
@@ -1145,6 +1334,97 @@ int main (int argc, char *argv[])
     //  6. (Possibly) also save the location of the beginning of the .text 
     //     section
 
+    int textStart = -1, dataStart = -1, firstData = 1;
+   // int dataSection = 0;
+    do
+    {
+        fullLine = (char*)malloc(255*sizeof(char));
+        strcpy(fullLine,"");
+
+        char *parse_buf = (char*)malloc(255*sizeof(char));
+        strcpy(parse_buf,"");
+
+        size_t charCount;
+        getline(&fullLine, &charCount, inFd);
+        strcpy(parse_buf, fullLine);
+
+        if(!lineIsEmpty(parse_buf))
+        {
+            if(!replaceTabsWithSpaces(parse_buf) && !removeComments(parse_buf))
+            {
+                if (strncmp(parse_buf, ".text\n", 10) == 0)
+                {
+                    textStart = lineNumber;
+                    if(textStart > dataStart && dataStart >= 0)
+                    {
+                        break;
+                    }
+                }
+
+                if(dataStart < 0)
+                {
+                    
+                    if(strncmp(parse_buf, ".data\n", 10) == 0)
+                    {
+                        dataStart = lineNumber;
+                       // dataSection = 1;
+                    }
+                }
+                else
+                {
+                    // we're already in the data section
+                    char tokenizer[255];
+                    char *name, *val_str;
+                    long val;
+                    strcpy(tokenizer, parse_buf);
+                    name = strtok(tokenizer, ":");
+
+                    if (strcmp(name, parse_buf) != 0)
+                    {
+                        // then we have a label:
+                        val_str = strtok(NULL, "\n");
+                        
+                        val = strtol(val_str, &val_str, 10);
+                        
+                        // add symbol to table
+                        addSymbol(name, val);
+
+                        
+                   }
+                    // TODO: handle for non-label data section lines
+                   else
+                   {
+                        //printf("Name: %s\n", name);
+                        // the line should just have a value in it
+                        val = strtol(name, &name, 10);
+                   }
+
+                   if(firstData == 1)
+                   {
+                       fprintf(dataFd, "%02x", val);
+                       firstData = 0;
+                   }
+                   else
+                   {
+                       fprintf(dataFd, " %02x", val);
+                   }
+                }
+            }
+        }
+        lineNumber++;
+        free(parse_buf);
+        free(fullLine);
+
+    } while(!feof(inFd));
+
+    fprintf(dataFd, ";\n");
+    fclose(dataFd);
+    fseek(inFd, 0, SEEK_SET);
+
+    //printTable();
+    //rewind(inFd);
+    //fclose(inFd);
+    //inFd = fopen(inFile, "r");
     /******************************************************/
     // Second pass of file: grabbing instructions and labels
     /******************************************************/
@@ -1154,8 +1434,11 @@ int main (int argc, char *argv[])
     // Also need to alter the function to populate the instruction so that if it
     // encounters a label in the instruction (referring to the labels from the 
     // .data section), it will be able to get the value from the SymbolTable
+
+    lineNumber = 0;
     do
     {
+        //printf("Second pass...\n");
         
         //String that will retain full line throughout parsing
         fullLine = (char *)malloc(255*sizeof(char));
@@ -1169,7 +1452,17 @@ int main (int argc, char *argv[])
         size_t charCount; //Junk variable
         getline(&fullLine, &charCount, inFd);
         strcpy(parse_buf, fullLine);
-        
+      
+        //printf("%d - %s\n", lineNumber, parse_buf);
+        if(lineNumber < textStart)
+        {
+            lineNumber++;
+            continue;
+        }
+        else if(dataStart > textStart && lineNumber >= dataStart - 1)
+        {
+            break;
+        }
         //Current instruction to fill
         INSTR instr;
         
